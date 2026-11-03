@@ -1,0 +1,33 @@
+# Editor / IDE - Visual Studio Code
+.vscode/
+*.code-workspace
+
+# Dependencies (only if local tooling is added; the app itself has no build step)
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+._*
+Thumbs.db
+desktop.ini
+
+# Logs and temp
+*.log
+*.tmp
+*.swp
+*~
+.cache/
+
+# Firebase CLI local artifacts
+# NOTE: js/firebase-config.js is PUBLIC by design and SHOULD be committed; do not ignore it.
+.firebase/
+firebase-debug.log
+database-debug.log
+ui-debug.log
+
+# Environment files (not used - the Firebase web config is public, security is in the rules)
+.env
+.env.local
+.env.*.local
