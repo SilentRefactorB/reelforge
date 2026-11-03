@@ -20,6 +20,7 @@
         <span id="presence-count">0</span>
         <span data-i18n="presence.label">Conectados ahora</span>
       </div>
+      <button id="theme-toggle" class="lang-toggle" type="button">Dark mode</button>
       <button id="lang-toggle" class="lang-toggle" type="button">English</button>
     </div>
   </div>
@@ -35,7 +36,7 @@
     <div id="kpi-grid" class="kpi-grid" hidden></div>
   </section>
 
-  <section class="panel">
+  <section id="finance-panel" class="panel">
     <div class="panel-header">
       <h2 data-i18n="section.finance">Ingresos de plataforma y GMV por mes</h2>
       <div id="finance-period" class="pill-group" role="group">
@@ -44,13 +45,14 @@
         <button type="button" data-months="3">3</button>
       </div>
     </div>
+    <div id="finance-legend" class="legend-group"></div>
     <div id="finance-state" class="section-state">Cargando</div>
     <div id="finance-content" class="chart-container" hidden>
       <div id="finance-chart" class="chart"></div>
     </div>
   </section>
 
-  <section class="panel">
+  <section id="mix-panel" class="panel">
     <div class="panel-header">
       <h2 data-i18n="section.mix">Mezcla de ingresos</h2>
     </div>
@@ -58,7 +60,7 @@
     <div id="mix-chart" class="chart" hidden></div>
   </section>
 
-  <section class="panel">
+  <section id="funnel-panel" class="panel">
     <div class="panel-header">
       <h2 data-i18n="section.funnel">Embudo de conversion</h2>
     </div>
@@ -66,7 +68,7 @@
     <div id="funnel-chart" class="chart" hidden></div>
   </section>
 
-  <section class="panel">
+  <section id="games-panel" class="panel">
     <div class="panel-header">
       <h2 data-i18n="section.games">Juegos mas jugados</h2>
       <div id="games-toggle" class="pill-group" role="group">
@@ -78,7 +80,7 @@
     <div id="games-chart" class="chart" hidden></div>
   </section>
 
-  <section class="panel">
+  <section id="creators-panel" class="panel">
     <div class="panel-header">
       <h2 data-i18n="section.creators">Creadores afiliados activos</h2>
     </div>
@@ -88,7 +90,7 @@
     </div>
   </section>
 
-  <section class="panel">
+  <section id="responsible-panel" class="panel">
     <div class="panel-header">
       <h2 data-i18n="section.responsible">Juego responsable</h2>
     </div>

@@ -161,6 +161,7 @@ export function renderHBarChart(container, items, opts) {
 
   rows
     .append("rect")
+    .attr("class", "bar-fill")
     .attr("y", (rowH - 18) / 2)
     .attr("height", 18)
     .attr("width", (d) => x(valueFn(d)))
@@ -179,6 +180,33 @@ export function renderHBarChart(container, items, opts) {
         return `${base} (${formatPercent(valueFn(d) / percentOf, 0)})`;
       }
       return base;
+    });
+
+  const tooltip = getTooltip();
+  rows
+    .append("rect")
+    .attr("class", "bar-hit")
+    .attr("x", -margin.left)
+    .attr("y", 0)
+    .attr("width", margin.left + innerW)
+    .attr("height", rowH)
+    .attr("fill", "transparent")
+    .on("mouseenter", function (event, d) {
+      d3.select(this.parentNode).select(".bar-fill").classed("bar-hover", true);
+      const base = formatFn(valueFn(d));
+      const extra = percentOf ? ` (${formatPercent(valueFn(d) / percentOf, 0)})` : "";
+      tooltip
+        .html(`<strong>${labelFn(d)}</strong><br>${base}${extra}`)
+        .style("left", event.clientX + 12 + "px")
+        .style("top", event.clientY - 12 + "px")
+        .style("opacity", 1);
+    })
+    .on("mousemove", (event) => {
+      tooltip.style("left", event.clientX + 12 + "px").style("top", event.clientY - 12 + "px");
+    })
+    .on("mouseleave", function () {
+      d3.select(this.parentNode).select(".bar-fill").classed("bar-hover", false);
+      tooltip.style("opacity", 0);
     });
 }
 

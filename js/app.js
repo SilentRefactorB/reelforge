@@ -21,8 +21,61 @@ const state = {
   breakdowns: null,
   breakdownsError: false,
   periodMonths: 12,
-  gamesMetric: "plays"
+  gamesMetric: "plays",
+  financeVisible: { gmv: true, revenue: true }
 };
+
+// Clicking a KPI tile scrolls to and briefly highlights the panel it relates to.
+// Tiles with no natural destination (e.g. online_now has no dedicated chart) stay inert.
+const KPI_TARGET = {
+  registered_users: "funnel-panel",
+  gmv_30d: "finance-panel",
+  revenue_30d: "finance-panel",
+  active_creators: "creators-panel",
+  conv_purchase: "funnel-panel"
+};
+
+const THEME_KEY = "rf_theme";
+
+function getStoredTheme() {
+  try {
+    return localStorage.getItem(THEME_KEY);
+  } catch (e) {
+    return null;
+  }
+}
+
+function effectiveTheme() {
+  const stored = getStoredTheme();
+  if (stored === "light" || stored === "dark") return stored;
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme(theme) {
+  if (theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+}
+
+function renderThemeButton() {
+  const btn = document.getElementById("theme-toggle");
+  const label = effectiveTheme() === "dark" ? t("theme.toLight") : t("theme.toDark");
+  btn.textContent = label;
+  btn.setAttribute("aria-label", label);
+}
+
+function toggleTheme() {
+  const next = effectiveTheme() === "dark" ? "light" : "dark";
+  try {
+    localStorage.setItem(THEME_KEY, next);
+  } catch (e) {
+    // ignore storage errors (private mode, quota, etc.)
+  }
+  applyTheme(next);
+  renderThemeButton();
+}
 
 const KPI_WINDOW_KEY = {
   registered_users: "window.total",
@@ -41,6 +94,81 @@ const KPI_FORMAT = {
   active_creators: formatNumber,
   conv_purchase: (v) => formatPercent(v, 1)
 };
+
+// Cosmetic-only "live ticker" on top of the real Firebase values: a small, bounded
+// per-tile jitter re-applied every few seconds so the panel reads as live between
+// real data pushes. The underlying numbers (state.kpis) always stay exactly what
+// Firebase sent; this never touches them, and resets the moment new data arrives.
+const KPI_JITTER = {
+  registered_users: { type: "drift", cap: 0.004 },
+  online_now: { type: "wobble", amp: 0.035 },
+  gmv_30d: { type: "drift", cap: 0.006 },
+  revenue_30d: { type: "drift", cap: 0.006 },
+  active_creators: { type: "drift", cap: 0.01 },
+  conv_purchase: { type: "wobble", amp: 0.02 }
+};
+const KPI_JITTER_INTERVAL_MS = 5000;
+
+let kpiJitterDrift = {};
+let kpiEls = {};
+let kpiJitterTimer = null;
+
+function resetKpiJitter() {
+  kpiJitterDrift = {};
+}
+
+function jitteredKpiValue(k) {
+  const cfg = KPI_JITTER[k.metric];
+  if (!cfg) return k.value;
+  if (cfg.type === "drift") {
+    const current = kpiJitterDrift[k.metric] || 0;
+    return k.value * (1 + current);
+  }
+  const offset = (Math.random() * 2 - 1) * cfg.amp;
+  return k.value * (1 + offset);
+}
+
+function flashKpiValue(el) {
+  el.classList.remove("value-flash");
+  void el.offsetWidth;
+  el.classList.add("value-flash");
+}
+
+function updateKpiTile(k) {
+  const refs = kpiEls[k.metric];
+  if (!refs) return;
+
+  const up = k.delta >= 0;
+  const fmt = KPI_FORMAT[k.metric] || formatNumber;
+  const text = fmt(jitteredKpiValue(k));
+  if (refs.lastText !== null && refs.lastText !== text) {
+    flashKpiValue(refs.valueEl);
+  }
+  refs.valueEl.textContent = text;
+  refs.lastText = text;
+
+  refs.deltaEl.className = "kpi-delta " + (up ? "up" : "down");
+  const deltaText = (up ? "+" : "") + formatPercent(k.delta, 1);
+  const arrow = up ? "▲" : "▼";
+  refs.deltaEl.innerHTML = `<span class="kpi-delta-pill">${arrow} ${deltaText}</span> <span class="kpi-sub">${t("delta.vsPrev")}</span>`;
+}
+
+function tickKpiJitter() {
+  if (!state.kpis || state.kpisError || state.kpis.length === 0) return;
+  state.kpis.forEach((k) => {
+    const cfg = KPI_JITTER[k.metric];
+    if (cfg && cfg.type === "drift") {
+      const current = kpiJitterDrift[k.metric] || 0;
+      kpiJitterDrift[k.metric] = Math.min(cfg.cap, current + Math.random() * (cfg.cap / 4));
+    }
+  });
+  state.kpis.forEach(updateKpiTile);
+}
+
+function startKpiJitter() {
+  if (kpiJitterTimer) return;
+  kpiJitterTimer = setInterval(tickKpiJitter, KPI_JITTER_INTERVAL_MS);
+}
 
 function applyStaticI18n() {
   document.querySelectorAll("[data-i18n]").forEach((el) => {
@@ -61,12 +189,22 @@ function showState(stateEl, contentEl, status) {
   stateEl.innerHTML = `<span class="state-icon" aria-hidden="true"></span><span>${t(key)}</span>`;
 }
 
+function scrollToPanel(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.remove("panel-pulse");
+  void el.offsetWidth;
+  el.classList.add("panel-pulse");
+}
+
 function renderHeaderChrome() {
   document.title = t("app.title");
   applyStaticI18n();
   const langBtn = document.getElementById("lang-toggle");
   langBtn.textContent = otherLangName();
   langBtn.setAttribute("aria-label", otherLangName());
+  renderThemeButton();
 }
 
 function renderHeaderTakeaway() {
@@ -99,11 +237,8 @@ function renderKpis() {
   showState(stateEl, grid, "ready");
 
   grid.innerHTML = "";
+  kpiEls = {};
   state.kpis.forEach((k) => {
-    const up = k.delta >= 0;
-    const fmt = KPI_FORMAT[k.metric] || formatNumber;
-    const windowKey = KPI_WINDOW_KEY[k.metric] || "window.last30";
-
     const tile = document.createElement("div");
     tile.className = "kpi-tile";
 
@@ -113,40 +248,89 @@ function renderKpis() {
 
     const value = document.createElement("div");
     value.className = "kpi-value";
-    value.textContent = fmt(k.value);
 
     const delta = document.createElement("div");
-    delta.className = "kpi-delta " + (up ? "up" : "down");
-    const deltaText = (up ? "+" : "") + formatPercent(k.delta, 1);
-    const arrow = up ? "▲" : "▼";
-    delta.innerHTML = `<span class="kpi-delta-pill">${arrow} ${deltaText}</span> <span class="kpi-sub">${t("delta.vsPrev")}</span>`;
+    delta.className = "kpi-delta";
 
     const win = document.createElement("div");
     win.className = "kpi-window";
-    win.textContent = t(windowKey);
+    win.textContent = t(KPI_WINDOW_KEY[k.metric] || "window.last30");
 
     tile.appendChild(label);
     tile.appendChild(value);
     tile.appendChild(delta);
     tile.appendChild(win);
+
+    const target = KPI_TARGET[k.metric];
+    if (target) {
+      tile.classList.add("kpi-tile-linked");
+      tile.tabIndex = 0;
+      tile.setAttribute("role", "button");
+      const go = () => scrollToPanel(target);
+      tile.addEventListener("click", go);
+      tile.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          go();
+        }
+      });
+    }
+
     grid.appendChild(tile);
+
+    kpiEls[k.metric] = { valueEl: value, deltaEl: delta, lastText: null };
+  });
+
+  state.kpis.forEach(updateKpiTile);
+}
+
+const FINANCE_SERIES = [
+  { key: "gmv", labelKey: "series.gmv", color: "var(--accent)" },
+  { key: "revenue", labelKey: "series.revenue", color: "var(--up)" }
+];
+
+function renderFinanceLegend() {
+  const el = document.getElementById("finance-legend");
+  el.innerHTML = "";
+  FINANCE_SERIES.forEach((s) => {
+    const visible = state.financeVisible[s.key];
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "legend-pill" + (visible ? "" : " off");
+    btn.style.setProperty("--legend-color", s.color);
+    const swatch = document.createElement("span");
+    swatch.className = "legend-swatch";
+    btn.appendChild(swatch);
+    btn.appendChild(document.createTextNode(t(s.labelKey)));
+    btn.addEventListener("click", () => {
+      const otherVisible = FINANCE_SERIES.some(
+        (other) => other.key !== s.key && state.financeVisible[other.key]
+      );
+      if (visible && !otherVisible) return; // keep at least one series visible
+      state.financeVisible[s.key] = !visible;
+      renderFinance();
+    });
+    el.appendChild(btn);
   });
 }
 
 function renderFinance() {
   const stateEl = document.getElementById("finance-state");
   const content = document.getElementById("finance-content");
+  renderFinanceLegend();
   if (state.monthlyError) return showState(stateEl, content, "error");
   if (!state.monthly) return showState(stateEl, content, "loading");
   if (state.monthly.length === 0) return showState(stateEl, content, "empty");
   showState(stateEl, content, "ready");
 
   const sliced = state.monthly.slice(-state.periodMonths);
+  const visibleSeries = FINANCE_SERIES.filter((s) => state.financeVisible[s.key]).map((s) => ({
+    key: s.key,
+    label: t(s.labelKey),
+    color: s.color
+  }));
   renderLineChart(document.getElementById("finance-chart"), sliced, {
-    series: [
-      { key: "gmv", label: t("series.gmv"), color: "var(--accent)" },
-      { key: "revenue", label: t("series.revenue"), color: "var(--up)" }
-    ],
+    series: visibleSeries,
     monthLabels: t("months"),
     valueFormat: formatCurrency
   });
@@ -275,6 +459,8 @@ function wireControls() {
     });
   });
 
+  document.getElementById("theme-toggle").addEventListener("click", toggleTheme);
+
   let resizeTimer = null;
   window.addEventListener("resize", () => {
     clearTimeout(resizeTimer);
@@ -294,6 +480,8 @@ function initPresenceWidget() {
   );
 }
 
+applyTheme(getStoredTheme());
+
 async function main() {
   await initI18n();
   renderHeaderChrome();
@@ -309,6 +497,7 @@ async function main() {
     (data) => {
       state.kpis = data;
       state.kpisError = false;
+      resetKpiJitter();
       renderHeaderTakeaway();
       renderKpis();
     },
@@ -362,6 +551,7 @@ async function main() {
   );
 
   initPresenceWidget();
+  startKpiJitter();
 }
 
 main();

@@ -13,8 +13,12 @@
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
+/* Dark tokens apply when the OS prefers dark and the user hasn't explicitly
+   chosen light (via the theme toggle), or whenever dark was explicitly chosen -
+   the second rule (outside the media query) always wins so the toggle works
+   regardless of the system preference. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0d1016;
     --bg-elev: #161a22;
     --text: #e9ecf1;
@@ -26,6 +30,19 @@
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
     --shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.55);
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d1016;
+  --bg-elev: #161a22;
+  --text: #e9ecf1;
+  --text-dim: #9aa4b2;
+  --border: #272e3a;
+  --accent: #6f8cff;
+  --up: #3ddc97;
+  --down: #ff6b61;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.55);
 }
 
 * {
@@ -178,6 +195,15 @@ body {
   transform: translateY(-1px);
 }
 
+.panel-pulse {
+  animation: rf-panel-pulse 1.2s ease-out;
+}
+
+@keyframes rf-panel-pulse {
+  0% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent); }
+  100% { box-shadow: var(--shadow); }
+}
+
 .panel:first-child {
   grid-column: 1 / -1;
 }
@@ -252,6 +278,17 @@ body {
   padding: 14px 16px;
 }
 
+.kpi-tile-linked {
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.kpi-tile-linked:hover,
+.kpi-tile-linked:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
 .kpi-label {
   font-size: 12px;
   color: var(--text-dim);
@@ -262,6 +299,15 @@ body {
   font-size: 22px;
   font-weight: 700;
   margin-bottom: 4px;
+}
+
+.kpi-value.value-flash {
+  animation: rf-value-flash 0.7s ease-out;
+}
+
+@keyframes rf-value-flash {
+  0% { color: var(--accent); }
+  100% { color: var(--text); }
 }
 
 .kpi-delta {
@@ -329,6 +375,41 @@ body {
   border-color: var(--accent);
 }
 
+.legend-group {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.legend-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  cursor: pointer;
+  opacity: 1;
+  transition: opacity 0.15s ease;
+}
+
+.legend-pill.off {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+.legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--legend-color);
+  flex: 0 0 auto;
+}
+
 /* Charts */
 
 .chart-container,
@@ -365,6 +446,14 @@ body {
   fill: var(--text);
   font-size: 12px;
   font-weight: 600;
+}
+
+.bar-fill {
+  transition: filter 0.1s ease;
+}
+
+.bar-fill.bar-hover {
+  filter: brightness(1.18);
 }
 
 /* Stat row (responsible gaming) */
