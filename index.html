@@ -15,11 +15,6 @@
       <span class="badge-demo" data-i18n="badge.demo">Datos demostrativos</span>
     </div>
     <div class="header-controls">
-      <div class="presence-widget">
-        <span class="presence-dot"></span>
-        <span id="presence-count">0</span>
-        <span data-i18n="presence.label">Conectados ahora</span>
-      </div>
       <button id="theme-toggle" class="lang-toggle" type="button">Dark mode</button>
       <button id="lang-toggle" class="lang-toggle" type="button">English</button>
     </div>
@@ -28,22 +23,39 @@
   <p id="header-takeaway" class="header-takeaway"></p>
 </header>
 
-<main class="dashboard">
+<nav class="tabs" id="tabs" role="tablist" aria-label="Secciones">
+  <button type="button" class="tab active" role="tab" data-tab="overview" data-i18n="tab.overview">Resumen</button>
+  <button type="button" class="tab" role="tab" data-tab="business" data-i18n="tab.business">Negocio</button>
+  <button type="button" class="tab" role="tab" data-tab="players" data-i18n="tab.players">Jugadores</button>
+  <button type="button" class="tab" role="tab" data-tab="catalog" data-i18n="tab.catalog">Catalogo y creadores</button>
+  <button type="button" class="tab" role="tab" data-tab="responsible" data-i18n="tab.responsible">Juego responsable</button>
+</nav>
 
-  <section class="panel" aria-labelledby="kpi-heading">
+<div class="filter-bar">
+  <span class="filter-label" data-i18n="control.period">Periodo</span>
+  <div id="global-period" class="pill-group" role="group">
+    <button type="button" class="active" data-months="12">12</button>
+    <button type="button" data-months="6">6</button>
+    <button type="button" data-months="3">3</button>
+  </div>
+  <span class="filter-months" data-i18n="control.months">meses</span>
+</div>
+
+<main>
+
+<!-- ===================== TAB: RESUMEN ===================== -->
+<section class="tab-panel active dashboard" data-tab="overview">
+
+  <section class="panel full" aria-labelledby="kpi-heading">
     <h2 id="kpi-heading" class="visually-hidden" data-i18n="app.title">ReelForge</h2>
     <div id="kpi-state" class="section-state">Cargando</div>
     <div id="kpi-grid" class="kpi-grid" hidden></div>
   </section>
 
-  <section id="finance-panel" class="panel">
+  <section class="panel">
     <div class="panel-header">
       <h2 data-i18n="section.finance">Ingresos de plataforma y GMV por mes</h2>
-      <div id="finance-period" class="pill-group" role="group">
-        <button type="button" class="active" data-months="12">12</button>
-        <button type="button" data-months="6">6</button>
-        <button type="button" data-months="3">3</button>
-      </div>
+      <button type="button" class="csv-btn" data-csv="finance" data-i18n="control.csv">CSV</button>
     </div>
     <div id="finance-legend" class="legend-group"></div>
     <div id="finance-state" class="section-state">Cargando</div>
@@ -52,23 +64,117 @@
     </div>
   </section>
 
-  <section id="mix-panel" class="panel">
+  <section class="panel">
     <div class="panel-header">
       <h2 data-i18n="section.mix">Mezcla de ingresos</h2>
+      <button type="button" class="csv-btn" data-csv="mix" data-i18n="control.csv">CSV</button>
     </div>
+    <div id="mix-legend" class="legend-group"></div>
     <div id="mix-state" class="section-state">Cargando</div>
     <div id="mix-chart" class="chart" hidden></div>
   </section>
 
-  <section id="funnel-panel" class="panel">
+</section>
+
+<!-- ===================== TAB: NEGOCIO ===================== -->
+<section class="tab-panel dashboard" data-tab="business">
+
+  <section class="panel full">
+    <div class="panel-header">
+      <h2 data-i18n="section.streams">Ingresos por fuente (mes a mes)</h2>
+      <button type="button" class="csv-btn" data-csv="streams" data-i18n="control.csv">CSV</button>
+    </div>
+    <div id="streams-legend" class="legend-group"></div>
+    <div id="streams-state" class="section-state">Cargando</div>
+    <div id="streams-chart" class="chart" hidden></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <h2 data-i18n="section.gmvgame">GMV por juego</h2>
+      <button type="button" class="csv-btn" data-csv="gmvgame" data-i18n="control.csv">CSV</button>
+    </div>
+    <div id="gmvgame-state" class="section-state">Cargando</div>
+    <div id="gmvgame-chart" class="chart" hidden></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <h2 data-i18n="section.growth">Crecimiento mensual</h2>
+      <button type="button" class="csv-btn" data-csv="growth" data-i18n="control.csv">CSV</button>
+    </div>
+    <div id="growth-state" class="section-state">Cargando</div>
+    <div id="growth-table" class="table-host" hidden></div>
+  </section>
+
+</section>
+
+<!-- ===================== TAB: JUGADORES ===================== -->
+<section class="tab-panel dashboard" data-tab="players">
+
+  <section class="panel">
     <div class="panel-header">
       <h2 data-i18n="section.funnel">Embudo de conversion</h2>
+      <button type="button" class="csv-btn" data-csv="funnel" data-i18n="control.csv">CSV</button>
     </div>
     <div id="funnel-state" class="section-state">Cargando</div>
     <div id="funnel-chart" class="chart" hidden></div>
   </section>
 
-  <section id="games-panel" class="panel">
+  <section class="panel">
+    <div class="panel-header">
+      <h2 data-i18n="section.audience">Audiencia activa (DAU / MAU)</h2>
+      <button type="button" class="csv-btn" data-csv="audience" data-i18n="control.csv">CSV</button>
+    </div>
+    <div id="audience-legend" class="legend-group"></div>
+    <div id="audience-state" class="section-state">Cargando</div>
+    <div id="audience-chart" class="chart" hidden></div>
+  </section>
+
+  <section class="panel full">
+    <div class="panel-header">
+      <h2 data-i18n="section.retention">Retencion por cohorte</h2>
+      <button type="button" class="csv-btn" data-csv="retention" data-i18n="control.csv">CSV</button>
+    </div>
+    <p class="panel-note" data-i18n="note.retention">Porcentaje de cada cohorte que sigue activa meses despues de registrarse.</p>
+    <div id="retention-state" class="section-state">Cargando</div>
+    <div id="retention-chart" class="chart" hidden></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <h2 data-i18n="section.geography">Usuarios por pais</h2>
+      <button type="button" class="csv-btn" data-csv="geography" data-i18n="control.csv">CSV</button>
+    </div>
+    <div id="geography-state" class="section-state">Cargando</div>
+    <div id="geography-chart" class="chart" hidden></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <h2 data-i18n="section.devices">Dispositivos</h2>
+      <button type="button" class="csv-btn" data-csv="devices" data-i18n="control.csv">CSV</button>
+    </div>
+    <div id="devices-legend" class="legend-group"></div>
+    <div id="devices-state" class="section-state">Cargando</div>
+    <div id="devices-chart" class="chart" hidden></div>
+  </section>
+
+</section>
+
+<!-- ===================== TAB: CATALOGO Y CREADORES ===================== -->
+<section class="tab-panel dashboard" data-tab="catalog">
+
+  <section class="panel full">
+    <div class="panel-header">
+      <h2 data-i18n="section.gamestable">Catalogo de juegos</h2>
+      <button type="button" class="csv-btn" data-csv="games" data-i18n="control.csv">CSV</button>
+    </div>
+    <div id="games-state" class="section-state">Cargando</div>
+    <div id="games-table" class="table-host" hidden></div>
+  </section>
+
+  <section class="panel">
     <div class="panel-header">
       <h2 data-i18n="section.games">Juegos mas jugados</h2>
       <div id="games-toggle" class="pill-group" role="group">
@@ -76,21 +182,35 @@
         <button type="button" data-metric="searches" data-i18n="control.searches">Mas buscados</button>
       </div>
     </div>
-    <div id="games-state" class="section-state">Cargando</div>
-    <div id="games-chart" class="chart" hidden></div>
+    <div id="gamesbar-state" class="section-state">Cargando</div>
+    <div id="gamesbar-chart" class="chart" hidden></div>
   </section>
 
-  <section id="creators-panel" class="panel">
+  <section class="panel">
+    <div class="panel-header">
+      <h2 data-i18n="section.category">Mezcla por categoria</h2>
+      <button type="button" class="csv-btn" data-csv="category" data-i18n="control.csv">CSV</button>
+    </div>
+    <div id="category-legend" class="legend-group"></div>
+    <div id="category-state" class="section-state">Cargando</div>
+    <div id="category-chart" class="chart" hidden></div>
+  </section>
+
+  <section class="panel full">
     <div class="panel-header">
       <h2 data-i18n="section.creators">Creadores afiliados activos</h2>
+      <button type="button" class="csv-btn" data-csv="creators" data-i18n="control.csv">CSV</button>
     </div>
     <div id="creators-state" class="section-state">Cargando</div>
-    <div id="creators-content" class="chart-container" hidden>
-      <div id="creators-chart" class="chart"></div>
-    </div>
+    <div id="creators-table" class="table-host" hidden></div>
   </section>
 
-  <section id="responsible-panel" class="panel">
+</section>
+
+<!-- ===================== TAB: JUEGO RESPONSABLE ===================== -->
+<section class="tab-panel dashboard" data-tab="responsible">
+
+  <section class="panel full">
     <div class="panel-header">
       <h2 data-i18n="section.responsible">Juego responsable</h2>
     </div>
@@ -98,7 +218,32 @@
     <div id="responsible-figures" class="stat-row" hidden></div>
   </section>
 
+  <section class="panel">
+    <div class="panel-header">
+      <h2 data-i18n="section.rgtrend">Alertas y autoexclusiones (mes a mes)</h2>
+      <button type="button" class="csv-btn" data-csv="rgtrend" data-i18n="control.csv">CSV</button>
+    </div>
+    <div id="rgtrend-legend" class="legend-group"></div>
+    <div id="rgtrend-state" class="section-state">Cargando</div>
+    <div id="rgtrend-chart" class="chart" hidden></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <h2 data-i18n="section.rglimits">Limites configurados (mes a mes)</h2>
+      <button type="button" class="csv-btn" data-csv="rglimits" data-i18n="control.csv">CSV</button>
+    </div>
+    <div id="rglimits-state" class="section-state">Cargando</div>
+    <div id="rglimits-chart" class="chart" hidden></div>
+  </section>
+
+</section>
+
 </main>
+
+<footer class="site-footer">
+  <span data-i18n="footer.note">ReelForge - Centro de inteligencia de negocios - Datos demostrativos</span>
+</footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script type="module" src="js/app.js"></script>

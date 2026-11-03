@@ -1,39 +1,51 @@
-// Orchestrates: i18n bootstrap, data subscriptions, rendering, filters and states.
+// Orchestrates: i18n bootstrap, data load (static JSON), tab navigation, global period
+// filter, rendering, sortable/searchable tables and CSV export. No Firebase, no live
+// jitter: every number is read once from reelforge.json and shown as-is (demo data).
 import { initI18n, t, getLang, setLang, otherLangName, onLangChange } from "./i18n.js";
-import { onKpis, onMonthly, onCatalog, onBreakdowns } from "./data.js";
-import { initPresence } from "./presence.js";
+import {
+  getKpis,
+  getMonthly,
+  getCatalog,
+  getBreakdowns,
+  getCreators,
+  getGeography,
+  getDevices,
+  getCohorts,
+  getResponsibleMonthly
+} from "./data.js";
 import {
   formatNumber,
   formatCurrency,
   formatPercent,
   renderLineChart,
   renderHBarChart,
-  renderStatRow
+  renderStatRow,
+  renderDonut,
+  renderStackedArea,
+  renderHeatmap,
+  renderTable,
+  renderCategoryLegend,
+  CAT_COLORS
 } from "./charts.js";
 
 const state = {
   kpis: null,
-  kpisError: false,
   monthly: null,
-  monthlyError: false,
   catalog: null,
-  catalogError: false,
   breakdowns: null,
-  breakdownsError: false,
+  creators: null,
+  geography: null,
+  devices: null,
+  cohorts: null,
+  rgMonthly: null,
+  error: false,
   periodMonths: 12,
   gamesMetric: "plays",
+  activeTab: "overview",
   financeVisible: { gmv: true, revenue: true }
 };
 
-// Clicking a KPI tile scrolls to and briefly highlights the panel it relates to.
-// Tiles with no natural destination (e.g. online_now has no dedicated chart) stay inert.
-const KPI_TARGET = {
-  registered_users: "funnel-panel",
-  gmv_30d: "finance-panel",
-  revenue_30d: "finance-panel",
-  active_creators: "creators-panel",
-  conv_purchase: "funnel-panel"
-};
+/* ---------------- Theme ---------------- */
 
 const THEME_KEY = "rf_theme";
 
@@ -52,11 +64,8 @@ function effectiveTheme() {
 }
 
 function applyTheme(theme) {
-  if (theme) {
-    document.documentElement.setAttribute("data-theme", theme);
-  } else {
-    document.documentElement.removeAttribute("data-theme");
-  }
+  if (theme) document.documentElement.setAttribute("data-theme", theme);
+  else document.documentElement.removeAttribute("data-theme");
 }
 
 function renderThemeButton() {
@@ -71,11 +80,14 @@ function toggleTheme() {
   try {
     localStorage.setItem(THEME_KEY, next);
   } catch (e) {
-    // ignore storage errors (private mode, quota, etc.)
+    /* ignore */
   }
   applyTheme(next);
   renderThemeButton();
+  renderActiveTab(); // chart colors follow CSS vars; re-render to pick new theme
 }
+
+/* ---------------- i18n / state helpers ---------------- */
 
 const KPI_WINDOW_KEY = {
   registered_users: "window.total",
@@ -94,81 +106,6 @@ const KPI_FORMAT = {
   active_creators: formatNumber,
   conv_purchase: (v) => formatPercent(v, 1)
 };
-
-// Cosmetic-only "live ticker" on top of the real Firebase values: a small, bounded
-// per-tile jitter re-applied every few seconds so the panel reads as live between
-// real data pushes. The underlying numbers (state.kpis) always stay exactly what
-// Firebase sent; this never touches them, and resets the moment new data arrives.
-const KPI_JITTER = {
-  registered_users: { type: "drift", cap: 0.004 },
-  online_now: { type: "wobble", amp: 0.035 },
-  gmv_30d: { type: "drift", cap: 0.006 },
-  revenue_30d: { type: "drift", cap: 0.006 },
-  active_creators: { type: "drift", cap: 0.01 },
-  conv_purchase: { type: "wobble", amp: 0.02 }
-};
-const KPI_JITTER_INTERVAL_MS = 5000;
-
-let kpiJitterDrift = {};
-let kpiEls = {};
-let kpiJitterTimer = null;
-
-function resetKpiJitter() {
-  kpiJitterDrift = {};
-}
-
-function jitteredKpiValue(k) {
-  const cfg = KPI_JITTER[k.metric];
-  if (!cfg) return k.value;
-  if (cfg.type === "drift") {
-    const current = kpiJitterDrift[k.metric] || 0;
-    return k.value * (1 + current);
-  }
-  const offset = (Math.random() * 2 - 1) * cfg.amp;
-  return k.value * (1 + offset);
-}
-
-function flashKpiValue(el) {
-  el.classList.remove("value-flash");
-  void el.offsetWidth;
-  el.classList.add("value-flash");
-}
-
-function updateKpiTile(k) {
-  const refs = kpiEls[k.metric];
-  if (!refs) return;
-
-  const up = k.delta >= 0;
-  const fmt = KPI_FORMAT[k.metric] || formatNumber;
-  const text = fmt(jitteredKpiValue(k));
-  if (refs.lastText !== null && refs.lastText !== text) {
-    flashKpiValue(refs.valueEl);
-  }
-  refs.valueEl.textContent = text;
-  refs.lastText = text;
-
-  refs.deltaEl.className = "kpi-delta " + (up ? "up" : "down");
-  const deltaText = (up ? "+" : "") + formatPercent(k.delta, 1);
-  const arrow = up ? "▲" : "▼";
-  refs.deltaEl.innerHTML = `<span class="kpi-delta-pill">${arrow} ${deltaText}</span> <span class="kpi-sub">${t("delta.vsPrev")}</span>`;
-}
-
-function tickKpiJitter() {
-  if (!state.kpis || state.kpisError || state.kpis.length === 0) return;
-  state.kpis.forEach((k) => {
-    const cfg = KPI_JITTER[k.metric];
-    if (cfg && cfg.type === "drift") {
-      const current = kpiJitterDrift[k.metric] || 0;
-      kpiJitterDrift[k.metric] = Math.min(cfg.cap, current + Math.random() * (cfg.cap / 4));
-    }
-  });
-  state.kpis.forEach(updateKpiTile);
-}
-
-function startKpiJitter() {
-  if (kpiJitterTimer) return;
-  kpiJitterTimer = setInterval(tickKpiJitter, KPI_JITTER_INTERVAL_MS);
-}
 
 function applyStaticI18n() {
   document.querySelectorAll("[data-i18n]").forEach((el) => {
@@ -189,14 +126,17 @@ function showState(stateEl, contentEl, status) {
   stateEl.innerHTML = `<span class="state-icon" aria-hidden="true"></span><span>${t(key)}</span>`;
 }
 
-function scrollToPanel(id) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.scrollIntoView({ behavior: "smooth", block: "center" });
-  el.classList.remove("panel-pulse");
-  void el.offsetWidth;
-  el.classList.add("panel-pulse");
+function slicedMonthly() {
+  if (!state.monthly) return [];
+  return state.monthly.slice(-state.periodMonths);
 }
+
+function monthLabelFull(m) {
+  const [year, mon] = m.split("-");
+  return t("months")[parseInt(mon, 10) - 1] + " " + year;
+}
+
+/* ---------------- Header ---------------- */
 
 function renderHeaderChrome() {
   document.title = t("app.title");
@@ -209,7 +149,7 @@ function renderHeaderChrome() {
 
 function renderHeaderTakeaway() {
   const el = document.getElementById("header-takeaway");
-  if (state.kpisError) {
+  if (state.error) {
     el.textContent = t("state.error");
     return;
   }
@@ -228,16 +168,17 @@ function renderHeaderTakeaway() {
     .replace("{gmv}", formatCurrency(gmv.value));
 }
 
+/* ---------------- Overview ---------------- */
+
 function renderKpis() {
   const stateEl = document.getElementById("kpi-state");
   const grid = document.getElementById("kpi-grid");
-  if (state.kpisError) return showState(stateEl, grid, "error");
+  if (state.error) return showState(stateEl, grid, "error");
   if (!state.kpis) return showState(stateEl, grid, "loading");
   if (state.kpis.length === 0) return showState(stateEl, grid, "empty");
   showState(stateEl, grid, "ready");
 
   grid.innerHTML = "";
-  kpiEls = {};
   state.kpis.forEach((k) => {
     const tile = document.createElement("div");
     tile.className = "kpi-tile";
@@ -248,9 +189,15 @@ function renderKpis() {
 
     const value = document.createElement("div");
     value.className = "kpi-value";
+    const fmt = KPI_FORMAT[k.metric] || formatNumber;
+    value.textContent = fmt(k.value);
 
     const delta = document.createElement("div");
-    delta.className = "kpi-delta";
+    const up = k.delta >= 0;
+    delta.className = "kpi-delta " + (up ? "up" : "down");
+    const arrow = up ? "▲" : "▼";
+    const deltaText = (up ? "+" : "") + formatPercent(k.delta, 1);
+    delta.innerHTML = `<span class="kpi-delta-pill">${arrow} ${deltaText}</span> <span class="kpi-sub">${t("delta.vsPrev")}</span>`;
 
     const win = document.createElement("div");
     win.className = "kpi-window";
@@ -260,28 +207,8 @@ function renderKpis() {
     tile.appendChild(value);
     tile.appendChild(delta);
     tile.appendChild(win);
-
-    const target = KPI_TARGET[k.metric];
-    if (target) {
-      tile.classList.add("kpi-tile-linked");
-      tile.tabIndex = 0;
-      tile.setAttribute("role", "button");
-      const go = () => scrollToPanel(target);
-      tile.addEventListener("click", go);
-      tile.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          go();
-        }
-      });
-    }
-
     grid.appendChild(tile);
-
-    kpiEls[k.metric] = { valueEl: value, deltaEl: delta, lastText: null };
   });
-
-  state.kpis.forEach(updateKpiTile);
 }
 
 const FINANCE_SERIES = [
@@ -306,7 +233,7 @@ function renderFinanceLegend() {
       const otherVisible = FINANCE_SERIES.some(
         (other) => other.key !== s.key && state.financeVisible[other.key]
       );
-      if (visible && !otherVisible) return; // keep at least one series visible
+      if (visible && !otherVisible) return;
       state.financeVisible[s.key] = !visible;
       renderFinance();
     });
@@ -318,63 +245,139 @@ function renderFinance() {
   const stateEl = document.getElementById("finance-state");
   const content = document.getElementById("finance-content");
   renderFinanceLegend();
-  if (state.monthlyError) return showState(stateEl, content, "error");
+  if (state.error) return showState(stateEl, content, "error");
   if (!state.monthly) return showState(stateEl, content, "loading");
   if (state.monthly.length === 0) return showState(stateEl, content, "empty");
   showState(stateEl, content, "ready");
 
-  const sliced = state.monthly.slice(-state.periodMonths);
   const visibleSeries = FINANCE_SERIES.filter((s) => state.financeVisible[s.key]).map((s) => ({
     key: s.key,
     label: t(s.labelKey),
     color: s.color
   }));
-  renderLineChart(document.getElementById("finance-chart"), sliced, {
+  renderLineChart(document.getElementById("finance-chart"), slicedMonthly(), {
     series: visibleSeries,
     monthLabels: t("months"),
     valueFormat: formatCurrency
   });
 }
 
-function renderCreators() {
-  const stateEl = document.getElementById("creators-state");
-  const content = document.getElementById("creators-content");
-  if (state.monthlyError) return showState(stateEl, content, "error");
-  if (!state.monthly) return showState(stateEl, content, "loading");
-  if (state.monthly.length === 0) return showState(stateEl, content, "empty");
-  showState(stateEl, content, "ready");
+const MIX_KEYS = [
+  { key: "mix_microtx", color: CAT_COLORS[0] },
+  { key: "mix_vip", color: CAT_COLORS[1] },
+  { key: "mix_media", color: CAT_COLORS[2] },
+  { key: "mix_fees", color: CAT_COLORS[3] }
+];
 
-  const sliced = state.monthly.slice(-state.periodMonths);
-  renderLineChart(document.getElementById("creators-chart"), sliced, {
-    series: [{ key: "active_creators", label: t("section.creators"), color: "var(--accent)" }],
-    monthLabels: t("months"),
-    valueFormat: formatNumber
-  });
+function mixItems() {
+  return state.breakdowns.filter((b) => b.group === "revenue").sort((a, b) => a.order - b.order);
 }
 
 function renderMix() {
   const stateEl = document.getElementById("mix-state");
   const content = document.getElementById("mix-chart");
-  if (state.breakdownsError) return showState(stateEl, content, "error");
+  const legend = document.getElementById("mix-legend");
+  if (state.error) return showState(stateEl, content, "error");
   if (!state.breakdowns) return showState(stateEl, content, "loading");
-  const items = state.breakdowns.filter((b) => b.group === "revenue").sort((a, b) => a.order - b.order);
+  const items = mixItems();
   if (items.length === 0) return showState(stateEl, content, "empty");
   showState(stateEl, content, "ready");
 
-  const total = d3.sum(items, (d) => d.value);
-  renderHBarChart(content, items, {
+  const colorFor = (key) => (MIX_KEYS.find((m) => m.key === key) || {}).color || CAT_COLORS[0];
+  renderCategoryLegend(legend, items.map((d) => ({ label: t(d.key), color: colorFor(d.key) })));
+  renderDonut(content, items, {
     labelFn: (d) => t(d.key),
     valueFn: (d) => d.value,
     formatFn: formatCurrency,
-    percentOf: total,
+    colors: items.map((d) => colorFor(d.key))
+  });
+}
+
+/* ---------------- Business tab ---------------- */
+
+const STREAM_SERIES = [
+  { key: "rev_microtx", labelKey: "mix_microtx", color: CAT_COLORS[0] },
+  { key: "rev_vip", labelKey: "mix_vip", color: CAT_COLORS[1] },
+  { key: "rev_media", labelKey: "mix_media", color: CAT_COLORS[2] },
+  { key: "rev_fees", labelKey: "mix_fees", color: CAT_COLORS[3] }
+];
+
+function renderStreams() {
+  const stateEl = document.getElementById("streams-state");
+  const content = document.getElementById("streams-chart");
+  const legend = document.getElementById("streams-legend");
+  if (state.error) return showState(stateEl, content, "error");
+  if (!state.monthly) return showState(stateEl, content, "loading");
+  if (state.monthly.length === 0) return showState(stateEl, content, "empty");
+  showState(stateEl, content, "ready");
+
+  renderCategoryLegend(legend, STREAM_SERIES.map((s) => ({ label: t(s.labelKey), color: s.color })));
+  renderStackedArea(content, slicedMonthly(), {
+    series: STREAM_SERIES.map((s) => ({ key: s.key, label: t(s.labelKey), color: s.color })),
+    monthLabels: t("months"),
+    valueFormat: formatCurrency
+  });
+}
+
+function renderGmvGame() {
+  const stateEl = document.getElementById("gmvgame-state");
+  const content = document.getElementById("gmvgame-chart");
+  if (state.error) return showState(stateEl, content, "error");
+  if (!state.catalog) return showState(stateEl, content, "loading");
+  if (state.catalog.length === 0) return showState(stateEl, content, "empty");
+  showState(stateEl, content, "ready");
+
+  const sorted = [...state.catalog].sort((a, b) => b.gmv - a.gmv);
+  renderHBarChart(content, sorted, {
+    labelFn: (d) => d.game,
+    valueFn: (d) => d.gmv,
+    formatFn: formatCurrency,
     color: "var(--accent)"
   });
 }
 
+function growthRows() {
+  const rows = [];
+  const list = slicedMonthly();
+  list.forEach((m, i) => {
+    const prev = i > 0 ? list[i - 1].revenue : null;
+    const growth = prev ? (m.revenue - prev) / prev : 0;
+    rows.push({ month: m.month, gmv: m.gmv, revenue: m.revenue, growth });
+  });
+  return rows;
+}
+
+function renderGrowth() {
+  const stateEl = document.getElementById("growth-state");
+  const content = document.getElementById("growth-table");
+  if (state.error) return showState(stateEl, content, "error");
+  if (!state.monthly) return showState(stateEl, content, "loading");
+  if (state.monthly.length === 0) return showState(stateEl, content, "empty");
+  showState(stateEl, content, "ready");
+
+  renderTable(content, growthRows(), {
+    columns: [
+      { key: "month", label: t("col.month"), format: (v) => monthLabelFull(v) },
+      { key: "gmv", label: t("col.gmv"), numeric: true, align: "right", format: (v) => formatCurrency(v) },
+      { key: "revenue", label: t("col.revenue"), numeric: true, align: "right", format: (v) => formatCurrency(v) },
+      {
+        key: "growth",
+        label: t("col.growth"),
+        numeric: true,
+        align: "right",
+        format: (v) => (v >= 0 ? "+" : "") + formatPercent(v, 1)
+      }
+    ],
+    defaultSort: { key: "month", dir: "asc" }
+  });
+}
+
+/* ---------------- Players tab ---------------- */
+
 function renderFunnel() {
   const stateEl = document.getElementById("funnel-state");
   const content = document.getElementById("funnel-chart");
-  if (state.breakdownsError) return showState(stateEl, content, "error");
+  if (state.error) return showState(stateEl, content, "error");
   if (!state.breakdowns) return showState(stateEl, content, "loading");
   const items = state.breakdowns.filter((b) => b.group === "funnel").sort((a, b) => a.order - b.order);
   if (items.length === 0) return showState(stateEl, content, "empty");
@@ -390,10 +393,173 @@ function renderFunnel() {
   });
 }
 
+const AUDIENCE_SERIES = [
+  { key: "mau", labelKey: "metric.mau", color: "var(--accent)" },
+  { key: "dau", labelKey: "metric.dau", color: "var(--up)" }
+];
+
+function renderAudience() {
+  const stateEl = document.getElementById("audience-state");
+  const content = document.getElementById("audience-chart");
+  const legend = document.getElementById("audience-legend");
+  if (state.error) return showState(stateEl, content, "error");
+  if (!state.monthly) return showState(stateEl, content, "loading");
+  if (state.monthly.length === 0) return showState(stateEl, content, "empty");
+  showState(stateEl, content, "ready");
+
+  renderCategoryLegend(legend, AUDIENCE_SERIES.map((s) => ({ label: t(s.labelKey), color: s.color })));
+  renderLineChart(content, slicedMonthly(), {
+    series: AUDIENCE_SERIES.map((s) => ({ key: s.key, label: t(s.labelKey), color: s.color })),
+    monthLabels: t("months"),
+    valueFormat: formatNumber
+  });
+}
+
+function renderRetention() {
+  const stateEl = document.getElementById("retention-state");
+  const content = document.getElementById("retention-chart");
+  if (state.error) return showState(stateEl, content, "error");
+  if (!state.cohorts) return showState(stateEl, content, "loading");
+  if (!state.cohorts.rows || state.cohorts.rows.length === 0) return showState(stateEl, content, "empty");
+  showState(stateEl, content, "ready");
+
+  renderHeatmap(content, state.cohorts, { monthLabels: t("months") });
+}
+
+function renderGeography() {
+  const stateEl = document.getElementById("geography-state");
+  const content = document.getElementById("geography-chart");
+  if (state.error) return showState(stateEl, content, "error");
+  if (!state.geography) return showState(stateEl, content, "loading");
+  if (state.geography.length === 0) return showState(stateEl, content, "empty");
+  showState(stateEl, content, "ready");
+
+  const sorted = [...state.geography].sort((a, b) => b.users - a.users);
+  renderHBarChart(content, sorted, {
+    labelFn: (d) => t(d.country),
+    valueFn: (d) => d.users,
+    formatFn: formatNumber,
+    color: "var(--accent)"
+  });
+}
+
+function renderDevices() {
+  const stateEl = document.getElementById("devices-state");
+  const content = document.getElementById("devices-chart");
+  const legend = document.getElementById("devices-legend");
+  if (state.error) return showState(stateEl, content, "error");
+  if (!state.devices) return showState(stateEl, content, "loading");
+  if (state.devices.length === 0) return showState(stateEl, content, "empty");
+  showState(stateEl, content, "ready");
+
+  renderCategoryLegend(legend, state.devices.map((d, i) => ({ label: t(d.platform), color: CAT_COLORS[i % CAT_COLORS.length] })));
+  renderDonut(content, state.devices, {
+    labelFn: (d) => t(d.platform),
+    valueFn: (d) => d.share,
+    formatFn: (v) => formatPercent(v, 0),
+    colors: state.devices.map((d, i) => CAT_COLORS[i % CAT_COLORS.length])
+  });
+}
+
+/* ---------------- Catalog & creators tab ---------------- */
+
+function renderGamesTable() {
+  const stateEl = document.getElementById("games-state");
+  const content = document.getElementById("games-table");
+  if (state.error) return showState(stateEl, content, "error");
+  if (!state.catalog) return showState(stateEl, content, "loading");
+  if (state.catalog.length === 0) return showState(stateEl, content, "empty");
+  showState(stateEl, content, "ready");
+
+  const rows = state.catalog.map((g) => ({ ...g, categoryLabel: t(g.category) }));
+  renderTable(content, rows, {
+    columns: [
+      { key: "game", label: t("col.game") },
+      { key: "categoryLabel", label: t("col.category") },
+      { key: "plays", label: t("col.plays"), numeric: true, align: "right", format: (v) => formatNumber(v) },
+      { key: "searches", label: t("col.searches"), numeric: true, align: "right", format: (v) => formatNumber(v) },
+      { key: "players", label: t("col.players"), numeric: true, align: "right", format: (v) => formatNumber(v) },
+      { key: "gmv", label: t("col.gmv"), numeric: true, align: "right", format: (v) => formatCurrency(v) }
+    ],
+    searchKeys: ["game", "categoryLabel"],
+    searchPlaceholder: t("control.searchGames"),
+    defaultSort: { key: "plays", dir: "desc" }
+  });
+}
+
+function renderGamesBar() {
+  const stateEl = document.getElementById("gamesbar-state");
+  const content = document.getElementById("gamesbar-chart");
+  if (state.error) return showState(stateEl, content, "error");
+  if (!state.catalog) return showState(stateEl, content, "loading");
+  if (state.catalog.length === 0) return showState(stateEl, content, "empty");
+  showState(stateEl, content, "ready");
+
+  const metric = state.gamesMetric;
+  const sorted = [...state.catalog].sort((a, b) => b[metric] - a[metric]).slice(0, 8);
+  renderHBarChart(content, sorted, {
+    labelFn: (d) => d.game,
+    valueFn: (d) => d[metric],
+    formatFn: formatNumber,
+    color: "var(--accent)"
+  });
+}
+
+function categoryItems() {
+  const map = {};
+  state.catalog.forEach((g) => {
+    map[g.category] = (map[g.category] || 0) + g.gmv;
+  });
+  return Object.keys(map).map((key) => ({ key, value: map[key] }));
+}
+
+function renderCategory() {
+  const stateEl = document.getElementById("category-state");
+  const content = document.getElementById("category-chart");
+  const legend = document.getElementById("category-legend");
+  if (state.error) return showState(stateEl, content, "error");
+  if (!state.catalog) return showState(stateEl, content, "loading");
+  if (state.catalog.length === 0) return showState(stateEl, content, "empty");
+  showState(stateEl, content, "ready");
+
+  const items = categoryItems();
+  renderCategoryLegend(legend, items.map((d, i) => ({ label: t(d.key), color: CAT_COLORS[i % CAT_COLORS.length] })));
+  renderDonut(content, items, {
+    labelFn: (d) => t(d.key),
+    valueFn: (d) => d.value,
+    formatFn: formatCurrency,
+    colors: items.map((d, i) => CAT_COLORS[i % CAT_COLORS.length])
+  });
+}
+
+function renderCreators() {
+  const stateEl = document.getElementById("creators-state");
+  const content = document.getElementById("creators-table");
+  if (state.error) return showState(stateEl, content, "error");
+  if (!state.creators) return showState(stateEl, content, "loading");
+  if (state.creators.length === 0) return showState(stateEl, content, "empty");
+  showState(stateEl, content, "ready");
+
+  renderTable(content, state.creators, {
+    columns: [
+      { key: "name", label: t("col.creator") },
+      { key: "games", label: t("col.games"), numeric: true, align: "right", format: (v) => formatNumber(v) },
+      { key: "plays", label: t("col.plays"), numeric: true, align: "right", format: (v) => formatNumber(v) },
+      { key: "gmv", label: t("col.gmv"), numeric: true, align: "right", format: (v) => formatCurrency(v) },
+      { key: "joined", label: t("col.joined"), format: (v) => monthLabelFull(v) }
+    ],
+    searchKeys: ["name"],
+    searchPlaceholder: t("control.searchCreators"),
+    defaultSort: { key: "gmv", dir: "desc" }
+  });
+}
+
+/* ---------------- Responsible gaming tab ---------------- */
+
 function renderResponsible() {
   const stateEl = document.getElementById("responsible-state");
   const content = document.getElementById("responsible-figures");
-  if (state.breakdownsError) return showState(stateEl, content, "error");
+  if (state.error) return showState(stateEl, content, "error");
   if (!state.breakdowns) return showState(stateEl, content, "loading");
   const items = state.breakdowns
     .filter((b) => b.group === "responsible_gaming")
@@ -408,46 +574,200 @@ function renderResponsible() {
   });
 }
 
-function renderGames() {
-  const stateEl = document.getElementById("games-state");
-  const content = document.getElementById("games-chart");
-  if (state.catalogError) return showState(stateEl, content, "error");
-  if (!state.catalog) return showState(stateEl, content, "loading");
-  if (state.catalog.length === 0) return showState(stateEl, content, "empty");
+const RGTREND_SERIES = [
+  { key: "alerts", labelKey: "rg_alerts_s", color: "var(--accent)" },
+  { key: "selfexcl", labelKey: "rg_selfexcl_s", color: "var(--down)" }
+];
+
+function renderRgTrend() {
+  const stateEl = document.getElementById("rgtrend-state");
+  const content = document.getElementById("rgtrend-chart");
+  const legend = document.getElementById("rgtrend-legend");
+  if (state.error) return showState(stateEl, content, "error");
+  if (!state.rgMonthly) return showState(stateEl, content, "loading");
+  if (state.rgMonthly.length === 0) return showState(stateEl, content, "empty");
   showState(stateEl, content, "ready");
 
-  const metric = state.gamesMetric;
-  const sorted = [...state.catalog].sort((a, b) => b[metric] - a[metric]);
-  renderHBarChart(content, sorted, {
-    labelFn: (d) => d.game,
-    valueFn: (d) => d[metric],
-    formatFn: formatNumber,
-    color: "var(--accent)"
+  const sliced = state.rgMonthly.slice(-state.periodMonths);
+  renderCategoryLegend(legend, RGTREND_SERIES.map((s) => ({ label: t(s.labelKey), color: s.color })));
+  renderLineChart(content, sliced, {
+    series: RGTREND_SERIES.map((s) => ({ key: s.key, label: t(s.labelKey), color: s.color })),
+    monthLabels: t("months"),
+    valueFormat: formatNumber
   });
 }
 
-function renderAll() {
-  renderHeaderTakeaway();
-  renderKpis();
-  renderFinance();
-  renderCreators();
-  renderMix();
-  renderFunnel();
-  renderResponsible();
-  renderGames();
+function renderRgLimits() {
+  const stateEl = document.getElementById("rglimits-state");
+  const content = document.getElementById("rglimits-chart");
+  if (state.error) return showState(stateEl, content, "error");
+  if (!state.rgMonthly) return showState(stateEl, content, "loading");
+  if (state.rgMonthly.length === 0) return showState(stateEl, content, "empty");
+  showState(stateEl, content, "ready");
+
+  const sliced = state.rgMonthly.slice(-state.periodMonths);
+  renderLineChart(content, sliced, {
+    series: [{ key: "limits", label: t("rg_limits_s"), color: "var(--up)" }],
+    monthLabels: t("months"),
+    valueFormat: formatNumber
+  });
 }
+
+/* ---------------- Tab routing ---------------- */
+
+const TAB_RENDER = {
+  overview: () => {
+    renderKpis();
+    renderFinance();
+    renderMix();
+  },
+  business: () => {
+    renderStreams();
+    renderGmvGame();
+    renderGrowth();
+  },
+  players: () => {
+    renderFunnel();
+    renderAudience();
+    renderRetention();
+    renderGeography();
+    renderDevices();
+  },
+  catalog: () => {
+    renderGamesTable();
+    renderGamesBar();
+    renderCategory();
+    renderCreators();
+  },
+  responsible: () => {
+    renderResponsible();
+    renderRgTrend();
+    renderRgLimits();
+  }
+};
+
+function renderActiveTab() {
+  renderHeaderTakeaway();
+  const fn = TAB_RENDER[state.activeTab];
+  if (fn) fn();
+}
+
+function switchTab(name) {
+  if (!TAB_RENDER[name]) return;
+  state.activeTab = name;
+  document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.dataset.tab === name));
+  renderActiveTab();
+}
+
+/* ---------------- CSV export ---------------- */
+
+function toCsv(rows) {
+  return rows
+    .map((r) => r.map((c) => {
+      const s = String(c == null ? "" : c);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }).join(","))
+    .join("\n");
+}
+
+function downloadCsv(name, rows) {
+  const blob = new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name + ".csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function csvFor(key) {
+  const M = t("months");
+  const ml = (m) => M[parseInt(m.split("-")[1], 10) - 1] + " " + m.split("-")[0];
+  switch (key) {
+    case "finance":
+      return [[t("col.month"), t("series.gmv"), t("series.revenue")]].concat(
+        slicedMonthly().map((m) => [ml(m.month), m.gmv, m.revenue])
+      );
+    case "mix":
+      return [[t("col.stream"), t("col.value")]].concat(mixItems().map((d) => [t(d.key), d.value]));
+    case "streams":
+      return [[t("col.month"), t("mix_microtx"), t("mix_vip"), t("mix_media"), t("mix_fees")]].concat(
+        slicedMonthly().map((m) => [ml(m.month), m.rev_microtx, m.rev_vip, m.rev_media, m.rev_fees])
+      );
+    case "gmvgame":
+      return [[t("col.game"), t("col.gmv")]].concat(
+        [...state.catalog].sort((a, b) => b.gmv - a.gmv).map((g) => [g.game, g.gmv])
+      );
+    case "growth":
+      return [[t("col.month"), t("col.gmv"), t("col.revenue"), t("col.growth")]].concat(
+        growthRows().map((r) => [ml(r.month), r.gmv, r.revenue, (r.growth * 100).toFixed(1) + "%"])
+      );
+    case "funnel":
+      return [[t("col.stage"), t("col.value")]].concat(
+        state.breakdowns.filter((b) => b.group === "funnel").sort((a, b) => a.order - b.order).map((d) => [t(d.key), d.value])
+      );
+    case "audience":
+      return [[t("col.month"), t("metric.mau"), t("metric.dau")]].concat(
+        slicedMonthly().map((m) => [ml(m.month), m.mau, m.dau])
+      );
+    case "retention": {
+      const head = [t("col.cohort")].concat(state.cohorts.offsets);
+      return [head].concat(
+        state.cohorts.rows.map((r) => [ml(r.cohort)].concat(r.values.map((v) => (v == null ? "" : (v * 100).toFixed(0) + "%"))))
+      );
+    }
+    case "geography":
+      return [[t("col.country"), t("col.users"), t("col.gmv")]].concat(
+        [...state.geography].sort((a, b) => b.users - a.users).map((d) => [t(d.country), d.users, d.gmv])
+      );
+    case "devices":
+      return [[t("col.device"), t("col.share")]].concat(
+        state.devices.map((d) => [t(d.platform), (d.share * 100).toFixed(0) + "%"])
+      );
+    case "games":
+      return [[t("col.game"), t("col.category"), t("col.plays"), t("col.searches"), t("col.players"), t("col.gmv")]].concat(
+        state.catalog.map((g) => [g.game, t(g.category), g.plays, g.searches, g.players, g.gmv])
+      );
+    case "category":
+      return [[t("col.category"), t("col.gmv")]].concat(categoryItems().map((d) => [t(d.key), d.value]));
+    case "creators":
+      return [[t("col.creator"), t("col.games"), t("col.plays"), t("col.gmv"), t("col.joined")]].concat(
+        state.creators.map((c) => [c.name, c.games, c.plays, c.gmv, ml(c.joined)])
+      );
+    case "rgtrend":
+      return [[t("col.month"), t("rg_alerts_s"), t("rg_selfexcl_s")]].concat(
+        state.rgMonthly.slice(-state.periodMonths).map((m) => [ml(m.month), m.alerts, m.selfexcl])
+      );
+    case "rglimits":
+      return [[t("col.month"), t("rg_limits_s")]].concat(
+        state.rgMonthly.slice(-state.periodMonths).map((m) => [ml(m.month), m.limits])
+      );
+    default:
+      return [];
+  }
+}
+
+/* ---------------- Controls ---------------- */
 
 function wireControls() {
   document.getElementById("lang-toggle").addEventListener("click", () => {
     setLang(getLang() === "es" ? "en" : "es");
   });
 
-  document.querySelectorAll("#finance-period button").forEach((btn) => {
+  document.getElementById("theme-toggle").addEventListener("click", toggleTheme);
+
+  document.querySelectorAll(".tab").forEach((btn) => {
+    btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+  });
+
+  document.querySelectorAll("#global-period button").forEach((btn) => {
     btn.addEventListener("click", () => {
       state.periodMonths = parseInt(btn.dataset.months, 10);
-      document.querySelectorAll("#finance-period button").forEach((b) => b.classList.toggle("active", b === btn));
-      renderFinance();
-      renderCreators();
+      document.querySelectorAll("#global-period button").forEach((b) => b.classList.toggle("active", b === btn));
+      renderActiveTab();
     });
   });
 
@@ -455,103 +775,73 @@ function wireControls() {
     btn.addEventListener("click", () => {
       state.gamesMetric = btn.dataset.metric;
       document.querySelectorAll("#games-toggle button").forEach((b) => b.classList.toggle("active", b === btn));
-      renderGames();
+      renderGamesBar();
     });
   });
 
-  document.getElementById("theme-toggle").addEventListener("click", toggleTheme);
+  document.querySelectorAll(".csv-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (state.error || !state.monthly) return;
+      const key = btn.dataset.csv;
+      downloadCsv("reelforge_" + key, csvFor(key));
+    });
+  });
 
   let resizeTimer = null;
   window.addEventListener("resize", () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(renderAll, 150);
+    resizeTimer = setTimeout(renderActiveTab, 150);
   });
 }
 
-function initPresenceWidget() {
-  const countEl = document.getElementById("presence-count");
-  initPresence(
-    (count) => {
-      countEl.textContent = formatNumber(count);
-    },
-    () => {
-      countEl.textContent = "-";
-    }
-  );
-}
+/* ---------------- Boot ---------------- */
 
 applyTheme(getStoredTheme());
+
+async function loadAll() {
+  try {
+    const [kpis, monthly, catalog, breakdowns, creators, geography, devices, cohorts, rgMonthly] =
+      await Promise.all([
+        getKpis(),
+        getMonthly(),
+        getCatalog(),
+        getBreakdowns(),
+        getCreators(),
+        getGeography(),
+        getDevices(),
+        getCohorts(),
+        getResponsibleMonthly()
+      ]);
+    Object.assign(state, {
+      kpis,
+      monthly,
+      catalog,
+      breakdowns,
+      creators,
+      geography,
+      devices,
+      cohorts,
+      rgMonthly,
+      error: false
+    });
+  } catch (e) {
+    state.error = true;
+  }
+}
 
 async function main() {
   await initI18n();
   renderHeaderChrome();
   wireControls();
-  renderAll();
+  renderActiveTab(); // shows loading states
 
   onLangChange(() => {
     renderHeaderChrome();
-    renderAll();
+    renderActiveTab();
   });
 
-  onKpis(
-    (data) => {
-      state.kpis = data;
-      state.kpisError = false;
-      resetKpiJitter();
-      renderHeaderTakeaway();
-      renderKpis();
-    },
-    () => {
-      state.kpisError = true;
-      renderHeaderTakeaway();
-      renderKpis();
-    }
-  );
-
-  onMonthly(
-    (data) => {
-      state.monthly = data;
-      state.monthlyError = false;
-      renderFinance();
-      renderCreators();
-    },
-    () => {
-      state.monthlyError = true;
-      renderFinance();
-      renderCreators();
-    }
-  );
-
-  onCatalog(
-    (data) => {
-      state.catalog = data;
-      state.catalogError = false;
-      renderGames();
-    },
-    () => {
-      state.catalogError = true;
-      renderGames();
-    }
-  );
-
-  onBreakdowns(
-    (data) => {
-      state.breakdowns = data;
-      state.breakdownsError = false;
-      renderMix();
-      renderFunnel();
-      renderResponsible();
-    },
-    () => {
-      state.breakdownsError = true;
-      renderMix();
-      renderFunnel();
-      renderResponsible();
-    }
-  );
-
-  initPresenceWidget();
-  startKpiJitter();
+  await loadAll();
+  renderActiveTab();
 }
 
 main();

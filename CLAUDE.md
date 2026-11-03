@@ -14,8 +14,8 @@ chips, no real money).
 
 - Static site (HTML + CSS + vanilla JS), deployable on **GitHub Pages**.
 - Charts with **d3 v7** (UMD build from cdnjs, exact version, before the script that uses it).
-- Data and realtime with **Firebase Realtime Database** + **Anonymous Authentication**,
-  modular web SDK v9+ from the gstatic CDN.
+- Data from a single static **JSON file** (`reelforge.json`), loaded once with `fetch`.
+  No Firebase, no backend, no realtime: every number is read from the JSON and shown as-is.
 - No framework, no bundler, no server: everything runs in the browser.
 
 ## Working rules
@@ -23,12 +23,12 @@ chips, no real money).
 - **Bilingual UI (Spanish + English); Spanish is the default.** All visible text comes from a
   translations file; no hard-coded visible strings in markup. See SPEC section 6.
 - Content in plain text, **no special characters** (ASCII).
-- **No data in the code**: every number is read from Firebase (SPEC section 3).
-- Data layer **abstracted as if calling a backend API** (one function per endpoint); switching
-  to a real API must touch only those functions.
-- The Firebase config is **public by design**; security lives in the Security Rules. No
-  sensitive data, no Admin/service-account keys.
+- **No data in the code**: every number is read from `reelforge.json`.
+- Data layer **abstracted as if calling a backend API** (one function per endpoint in
+  `js/data.js`); switching to a real API must touch only those functions.
 - Data is **simulated** (pre-launch), labeled "Datos demostrativos" / "Demo data".
+- Tabs: Resumen, Negocio, Jugadores, Catalogo y creadores, Juego responsable. Global period
+  filter (3/6/12 months), sortable/searchable tables, per-panel CSV export.
 
 ## Documents (in docs/)
 
